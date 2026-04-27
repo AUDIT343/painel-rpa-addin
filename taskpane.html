@@ -9,59 +9,103 @@
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      padding: 16px;
+      padding: 0;
       font-family: 'Aptos', 'Segoe UI', sans-serif;
       font-size: 13px;
       color: #000;
       background: #ffffff;
     }
     .header {
+      padding: 12px 14px;
+      background: #f8f9fa;
+      border-bottom: 0.5px solid #d0d0d0;
       display: flex;
+    }
       align-items: center;
-      gap: 8px;
-      padding-bottom: 12px;
-      margin-bottom: 14px;
+    .header img {
+      height: 32px;
+      width: auto;
+    }
+    .tabs {
+      display: flex;
       border-bottom: 1px solid #e0e0e0;
+      background: white;
     }
-    .logo {
-      width: 28px;
-      height: 28px;
-      background: #005AAA;
-      border-radius: 4px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 11px;
-      font-weight: 600;
-    }
-    .title {
-      font-size: 14px;
-      font-weight: 600;
-    }
-    .field {
-      margin-bottom: 12px;
-    }
-    .field-label {
-      font-size: 11px;
+    .tab {
+      flex: 1;
+      padding: 11px 8px;
+      text-align: center;
+      font-size: 12px;
       color: #666;
-      margin-bottom: 4px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      user-select: none;
+      transition: color 0.15s;
     }
-    .field-value {
-      font-size: 13px;
+    .tab:hover { color: #005AAA; }
+    .tab.active {
+      color: #005AAA;
+      font-weight: 600;
+      border-bottom-color: #005AAA;
+    }
+    .tab-content {
+      display: none;
+      padding: 16px;
+    }
+    .tab-content.active { display: block; }
+
+    /* Tab Estado — info do PT */
+    .info-row {
+      margin-bottom: 14px;
+    }
+    .info-label {
+      font-size: 10px;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
+    .info-value {
+      font-size: 12px;
+      color: #555;
       word-break: break-word;
     }
-    .field-row {
+    .info-value.bold {
+      font-weight: 700;
+      color: #000;
+      font-size: 13px;
+    }
+    .info-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 10px;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    /* Estado atual em destaque */
+    .estado-section {
+      border-top: 1px solid #f0f0f0;
+      padding-top: 16px;
+      margin-top: 4px;
+    }
+    .estado-current {
+      text-align: center;
+      padding: 6px 0 16px;
+    }
+    .estado-current .info-label {
+      margin-bottom: 8px;
     }
     .estado-badge {
       display: inline-block;
-      padding: 4px 10px;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: 500;
+      padding: 8px 18px;
+      border-radius: 16px;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .estado-since {
+      font-size: 11px;
+      color: #999;
+      margin-top: 8px;
     }
     .estado-emcurso { background: #FAEEDA; color: #633806; }
     .estado-pendente { background: #FCEBEB; color: #791F1F; }
@@ -69,33 +113,31 @@
     .estado-revisto { background: #E1F5EE; color: #085041; }
     .estado-devolvido { background: #FBEAF0; color: #72243E; }
     .estado-vazio { background: #F1EFE8; color: #444441; }
-    .divider {
-      border-top: 1px solid #e0e0e0;
-      margin: 14px 0;
-    }
+
     select, button, textarea {
       font-family: inherit;
       font-size: 13px;
     }
     select {
       width: 100%;
-      padding: 8px 10px;
+      padding: 9px 10px;
       border: 1px solid #ccc;
       border-radius: 4px;
       background: white;
     }
     .btn-primary {
+      width: 100%;
       background: #005AAA;
       color: white;
       border: none;
-      padding: 9px 14px;
+      padding: 10px;
       border-radius: 4px;
       font-weight: 500;
       cursor: pointer;
-      width: 100%;
+      margin-top: 10px;
     }
     .btn-primary:hover { background: #004080; }
-    .btn-primary:disabled { background: #959897; cursor: not-allowed; }
+    .btn-primary:disabled { background: #c0c0c0; cursor: not-allowed; }
     .btn-secondary {
       background: white;
       color: #555;
@@ -105,6 +147,56 @@
       cursor: pointer;
     }
     .btn-secondary:hover { background: #f5f5f5; }
+
+    /* Tab Histórico */
+    .historico-empty {
+      text-align: center;
+      color: #999;
+      font-size: 12px;
+      padding: 30px 16px;
+      font-style: italic;
+    }
+    .historico-item {
+      border-left: 3px solid;
+      padding: 8px 0 8px 12px;
+      margin-bottom: 10px;
+      border-radius: 0 4px 4px 0;
+    }
+    .historico-item.bg-emcurso { background: #FDFAF4; border-left-color: #633806; }
+    .historico-item.bg-pendente { background: #FCFAFA; border-left-color: #791F1F; }
+    .historico-item.bg-concluido { background: #F8FAFE; border-left-color: #0C447C; }
+    .historico-item.bg-revisto { background: #F7FCFA; border-left-color: #085041; }
+    .historico-item.bg-devolvido { background: #FCF8FA; border-left-color: #72243E; }
+    .historico-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .historico-badge {
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .historico-time {
+      font-size: 11px;
+      color: #999;
+    }
+    .historico-meta {
+      font-size: 12px;
+      color: #555;
+    }
+    .historico-comentario {
+      font-size: 12px;
+      color: #333;
+      margin-top: 4px;
+      font-style: italic;
+      word-break: break-word;
+    }
+    .historico-comentario.empty {
+      color: #999;
+    }
 
     /* Modal */
     .modal-overlay {
@@ -151,74 +243,74 @@
       padding: 10px 12px;
       border-radius: 4px;
       font-size: 12px;
-      margin-bottom: 12px;
+      margin: 12px 16px 0;
     }
     .feedback.success { display: block; background: #E1F5EE; color: #085041; }
     .feedback.error { display: block; background: #FCEBEB; color: #791F1F; }
-
-    .historico {
-      font-size: 11px;
-      color: #666;
-      line-height: 1.6;
-    }
   </style>
 </head>
 <body>
 
   <div class="header">
-    <div class="logo">RPA</div>
-    <div class="title">Painel RPA</div>
+    <img src="assets/logo-header.png" alt="RPA SROC">
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="estado">Estado</div>
+    <div class="tab" data-tab="historico">Histórico</div>
   </div>
 
   <div id="feedback" class="feedback"></div>
 
-  <div class="field">
-    <div class="field-label">Cliente</div>
-    <div class="field-value" id="cliente">A carregar...</div>
-  </div>
+  <!-- Tab Estado -->
+  <div class="tab-content active" id="tab-estado">
 
-  <div class="field">
-    <div class="field-label">Papel de trabalho</div>
-    <div class="field-value" id="ficheiro">A carregar...</div>
-  </div>
-
-  <div class="field-row">
-    <div class="field">
-      <div class="field-label">Utilizador</div>
-      <div class="field-value" id="utilizador">—</div>
+    <div class="info-row">
+      <div class="info-label">Cliente</div>
+      <div class="info-value bold" id="cliente">A carregar...</div>
     </div>
-    <div class="field">
-      <div class="field-label">Iteração</div>
-      <div class="field-value" id="iteracao">—</div>
+
+    <div class="info-row">
+      <div class="info-label">Papel de trabalho</div>
+      <div class="info-value" id="ficheiro">A carregar...</div>
+    </div>
+
+    <div class="info-grid">
+      <div>
+        <div class="info-label">Utilizador</div>
+        <div class="info-value" id="utilizador">—</div>
+      </div>
+      <div>
+        <div class="info-label">Iteração</div>
+        <div class="info-value" id="iteracao">—</div>
+      </div>
+    </div>
+
+    <div class="estado-section">
+      <div class="estado-current">
+        <div class="info-label">Estado atual</div>
+        <div id="estado-atual"><span class="estado-badge estado-vazio">A carregar...</span></div>
+        <div class="estado-since" id="estado-since"></div>
+      </div>
+
+      <div class="info-label" style="margin-bottom: 8px;">Alterar para</div>
+      <select id="novo-estado">
+        <option value="">— selecionar estado —</option>
+        <option value="Em Curso">Em Curso</option>
+        <option value="Pendente">Pendente</option>
+        <option value="Concluído">Concluído</option>
+        <option value="Devolvido">Devolvido</option>
+        <option value="Revisto">Revisto</option>
+      </select>
+      <button class="btn-primary" id="btn-submeter" disabled>Submeter alteração</button>
     </div>
   </div>
 
-  <div class="divider"></div>
-
-  <div class="field">
-    <div class="field-label">Estado atual</div>
-    <div id="estado-atual"><span class="estado-badge estado-vazio">A carregar...</span></div>
-  </div>
-
-  <div class="field">
-    <div class="field-label">Alterar para</div>
-    <select id="novo-estado">
-      <option value="">— selecionar estado —</option>
-      <option value="Em Curso">Em Curso</option>
-      <option value="Pendente">Pendente</option>
-      <option value="Concluído">Concluído</option>
-      <option value="Devolvido">Devolvido</option>
-      <option value="Revisto">Revisto</option>
-    </select>
-  </div>
-
-  <button class="btn-primary" id="btn-submeter" disabled>Submeter alteração</button>
-
-  <div class="divider"></div>
-
-  <div class="field">
-    <div class="field-label">Histórico recente</div>
-    <div class="historico" id="historico">Sem alterações nesta sessão.</div>
+  <!-- Tab Histórico -->
+  <div class="tab-content" id="tab-historico">
+    <div id="historico-lista">
+      <div class="historico-empty">Sem alterações registadas.</div>
+    </div>
   </div>
 
   <!-- Modal de comentário -->
@@ -234,7 +326,7 @@
 
       <div class="modal-actions">
         <button class="btn-secondary" id="btn-cancelar">Cancelar</button>
-        <button class="btn-primary" id="btn-confirmar" style="width: auto;">Confirmar</button>
+        <button class="btn-primary" id="btn-confirmar" style="width: auto; margin-top: 0;">Confirmar</button>
       </div>
     </div>
   </div>
