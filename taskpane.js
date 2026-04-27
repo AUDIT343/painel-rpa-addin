@@ -1,12 +1,9 @@
 /* ============================================================
-   Painel RPA - Task pane logic (PoC v0.2)
-   Mudanças vs v0.1:
-   - Layout com 2 tabs (Estado, Histórico)
-   - Histórico mostra comentários
-   - Bug fix: cabeçalho da folha já não aparece no histórico
-   - Logo RPA no cabeçalho
-   - Cliente a negrito
-   - "Estado desde" mostra timestamp da última transição
+   Painel RPA - Task pane logic (PoC v0.3)
+   Mudanças vs v0.2:
+   - Folha _RPA_Estado passa a ter uma Excel Table chamada RPA_Estado_Tbl
+   - Power Automate lê esta tabela com "List rows present in a table"
+   - Migração automática: se folha existir sem tabela, recria com tabela
    ============================================================ */
 
 const ESTADO_CONFIG = {
@@ -26,6 +23,8 @@ const ESTADO_CSS_CLASS = {
 };
 
 const NOME_FOLHA_ESTADO = "_RPA_Estado";
+const NOME_TABELA_ESTADO = "RPA_Estado_Tbl";
+const COLUNAS_TABELA = ["Timestamp", "Utilizador", "EstadoAnterior", "EstadoNovo", "Iteracao", "Comentario"];
 
 let utilizadorEmail = "";
 let utilizadorNome = "";
@@ -38,7 +37,6 @@ Office.onReady(async (info) => {
     return;
   }
 
-  // Identificar utilizador
   try {
     if (Office.context && Office.context.mailbox && Office.context.mailbox.userProfile) {
       utilizadorEmail = Office.context.mailbox.userProfile.emailAddress || "";
@@ -52,12 +50,10 @@ Office.onReady(async (info) => {
 
   document.getElementById("utilizador").textContent = utilizadorNome;
 
-  // Wire tabs
   document.querySelectorAll(".tab").forEach(tab => {
     tab.addEventListener("click", () => switchTab(tab.dataset.tab));
   });
 
-  // Wire eventos
   document.getElementById("novo-estado").addEventListener("change", onEstadoChange);
   document.getElementById("btn-submeter").addEventListener("click", abrirModal);
   document.getElementById("btn-cancelar").addEventListener("click", fecharModal);
@@ -69,6 +65,68 @@ Office.onReady(async (info) => {
 function switchTab(tabName) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tabName));
   document.querySelectorAll(".tab-content").forEach(c => c.classList.toggle("active", c.id === `tab-${tabName}`));
+}
+
+/**
+ * Garante que existe a folha _RPA_Estado com a tabela RPA_Estado_Tbl.
+ * Se a folha existir sem tabela (estrutura v0.2), apaga e recria.
+ * Devolve o objeto folha pronto para uso.
+ */
+async function garantirEstrutura(context) {
+  const sheets = context.workbook.worksheets;
+  sheets.load("items/name");
+  await context.sync();
+
+  let folha = sheets.items.find(s => s.name === NOME_FOLHA_ESTADO);
+
+  // Se folha existir, verificar se tem a tabela esperada
+  if (folha) {
+    const tables = folha.tables;
+    tables.load("items/name");
+    await context.sync();
+
+    const tabelaExiste = tables.items.some(t => t.name === NOME_TABELA_ESTADO);
+
+    if (!tabelaExiste) {
+      // Estrutura antiga (v0.2): apagar folha e recriar
+      folha.delete();
+      await context.sync();
+      folha = null;
+    }
+  }
+
+  // Criar folha + tabela se não existirem
+  if (!folha) {
+    folha = sheets.add(NOME_FOLHA_ESTADO);
+    folha.visibility = Excel.SheetVisibility.veryHidden;
+
+    // Criar tabela com cabeçalho
+    const range = folha.getRange("A1:F1");
+    range.values = [COLUNAS_TABELA];
+
+    const tabela = folha.tables.add("A1:F1", true /* hasHeaders */);
+    tabela.name = NOME_TABELA_ESTADO;
+
+    await context.sync();
+  }
+
+  return folha;
+}
+
+/**
+ * Lê a tabela RPA_Estado_Tbl e devolve as linhas (sem cabeçalho).
+ */
+async function lerTabela(context, folha) {
+  const tabela = folha.tables.getItem(NOME_TABELA_ESTADO);
+  const dataRange = tabela.getDataBodyRange();
+  dataRange.load("values, rowCount");
+  try {
+    await context.sync();
+    return dataRange.values || [];
+  } catch (e) {
+    // Tabela vazia (sem linhas de dados) lança exceção em algumas versões
+    return [];
+  }
 }
 
 async function carregarContexto() {
@@ -87,41 +145,23 @@ async function carregarContexto() {
     }
 
     await Excel.run(async (context) => {
-      const sheets = context.workbook.worksheets;
-      sheets.load("items/name");
-      await context.sync();
+      const folha = await garantirEstrutura(context);
+      const linhas = await lerTabela(context, folha);
 
-      let folha = sheets.items.find(s => s.name === NOME_FOLHA_ESTADO);
-
-      if (!folha) {
-        folha = sheets.add(NOME_FOLHA_ESTADO);
-        folha.visibility = Excel.SheetVisibility.veryHidden;
-        folha.getRange("A1:F1").values = [["Timestamp", "Utilizador", "EstadoAnterior", "EstadoNovo", "Iteracao", "Comentario"]];
-        await context.sync();
-
+      if (linhas.length === 0) {
         estadoAtualLido = "";
         timestampUltimoEstado = "";
         document.getElementById("iteracao").textContent = "1";
       } else {
-        const usedRange = folha.getUsedRange();
-        usedRange.load("values, rowCount");
-        await context.sync();
-
-        if (usedRange.rowCount > 1) {
-          const ultimaLinha = usedRange.values[usedRange.rowCount - 1];
-          estadoAtualLido = ultimaLinha[3] || "";
-          timestampUltimoEstado = ultimaLinha[0] || "";
-          const iteracao = ultimaLinha[4] || "1";
-          document.getElementById("iteracao").textContent = iteracao;
-        } else {
-          estadoAtualLido = "";
-          timestampUltimoEstado = "";
-          document.getElementById("iteracao").textContent = "1";
-        }
+        const ultima = linhas[linhas.length - 1];
+        estadoAtualLido = ultima[3] || "";
+        timestampUltimoEstado = ultima[0] || "";
+        const iteracao = ultima[4] || "1";
+        document.getElementById("iteracao").textContent = iteracao;
       }
 
       atualizarBadgeEstado(estadoAtualLido, timestampUltimoEstado);
-      await renderHistorico(folha, context);
+      renderHistorico(linhas);
     });
   } catch (err) {
     mostrarErro("Erro ao carregar contexto: " + err.message);
@@ -129,12 +169,9 @@ async function carregarContexto() {
 }
 
 function parseClienteFromSite(siteName) {
-  // Tentar extrair "Xcability, S.A. [RPA062]" de "XcabilityS.A.RPA062"
-  // Heurística: separar onde há transições maiúscula+ponto+RPA
   const matchRPA = siteName.match(/^(.+?)(RPA\d+)$/);
   if (matchRPA) {
     let nome = matchRPA[1].replace(/\.$/, "").trim();
-    // Tentar inserir vírgula antes de S.A./Lda.
     nome = nome.replace(/(S\.?A\.?)$/i, ", S.A.");
     nome = nome.replace(/(Lda\.?)$/i, ", Lda");
     return `${nome} [${matchRPA[2]}]`;
@@ -142,52 +179,42 @@ function parseClienteFromSite(siteName) {
   return siteName;
 }
 
-async function renderHistorico(folha, context) {
+function renderHistorico(linhas) {
   const lista = document.getElementById("historico-lista");
-  try {
-    const usedRange = folha.getUsedRange();
-    usedRange.load("values, rowCount");
-    await context.sync();
 
-    if (usedRange.rowCount <= 1) {
-      lista.innerHTML = '<div class="historico-empty">Sem alterações registadas.</div>';
-      return;
-    }
-
-    // Filtrar cabeçalho (fix do bug v0.1) — saltar linha 0 que é sempre cabeçalho
-    const linhas = usedRange.values.slice(1).reverse();  // mais recente primeiro
-
-    const html = linhas.map(l => {
-      const [timestamp, utilizador, estadoAnt, estadoNovo, iteracao, comentario] = l;
-      const estadoClass = ESTADO_CSS_CLASS[estadoNovo] || "vazio";
-      const tempo = formatarTempo(timestamp);
-      const comentarioHtml = comentario && String(comentario).trim()
-        ? `<div class="historico-comentario">"${escapeHtml(String(comentario))}"</div>`
-        : `<div class="historico-comentario empty">(sem comentário)</div>`;
-
-      return `
-        <div class="historico-item bg-${estadoClass}">
-          <div class="historico-header">
-            <span class="historico-badge estado-${estadoClass}">${escapeHtml(estadoNovo || "(vazio)")}</span>
-            <span class="historico-time">${tempo}</span>
-          </div>
-          <div class="historico-meta">${escapeHtml(utilizador || "—")} · Iteração ${iteracao || 1}</div>
-          ${comentarioHtml}
-        </div>
-      `;
-    }).join("");
-
-    lista.innerHTML = html;
-  } catch (e) {
-    lista.innerHTML = '<div class="historico-empty">Erro a carregar histórico.</div>';
+  if (!linhas || linhas.length === 0) {
+    lista.innerHTML = '<div class="historico-empty">Sem alterações registadas.</div>';
+    return;
   }
+
+  const linhasInvertidas = [...linhas].reverse();
+
+  const html = linhasInvertidas.map(l => {
+    const [timestamp, utilizador, estadoAnt, estadoNovo, iteracao, comentario] = l;
+    const estadoClass = ESTADO_CSS_CLASS[estadoNovo] || "vazio";
+    const tempo = formatarTempo(timestamp);
+    const comentarioHtml = comentario && String(comentario).trim()
+      ? `<div class="historico-comentario">"${escapeHtml(String(comentario))}"</div>`
+      : `<div class="historico-comentario empty">(sem comentário)</div>`;
+
+    return `
+      <div class="historico-item bg-${estadoClass}">
+        <div class="historico-header">
+          <span class="historico-badge estado-${estadoClass}">${escapeHtml(estadoNovo || "(vazio)")}</span>
+          <span class="historico-time">${tempo}</span>
+        </div>
+        <div class="historico-meta">${escapeHtml(utilizador || "—")} · Iteração ${iteracao || 1}</div>
+        ${comentarioHtml}
+      </div>
+    `;
+  }).join("");
+
+  lista.innerHTML = html;
 }
 
 function formatarTempo(timestamp) {
-  // Receber p.ex. "27/04/2026, 21:55" e mostrar de forma compacta
   if (!timestamp) return "—";
   const s = String(timestamp);
-  // Se for o dia de hoje, só mostra hora
   const hoje = new Date();
   const hojeStr = hoje.toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric" });
   if (s.startsWith(hojeStr)) {
@@ -233,6 +260,7 @@ function abrirModal() {
   }
 
   document.getElementById("modal-comentario").value = "";
+  document.getElementById("modal-comentario").style.border = "1px solid #ccc";
   document.getElementById("modal").classList.add("active");
   setTimeout(() => document.getElementById("modal-comentario").focus(), 50);
 }
@@ -247,7 +275,6 @@ async function confirmarAlteracao() {
   const cfg = ESTADO_CONFIG[novoEstado];
 
   if (cfg.comentario === "obrigatorio" && !comentario) {
-    // Marcar visualmente o textarea
     const ta = document.getElementById("modal-comentario");
     ta.style.border = "1px solid #C13838";
     ta.placeholder = "Comentário é obrigatório.";
@@ -262,8 +289,6 @@ async function confirmarAlteracao() {
 
     document.getElementById("novo-estado").value = "";
     document.getElementById("btn-submeter").disabled = true;
-    // Reset border do textarea
-    document.getElementById("modal-comentario").style.border = "1px solid #ccc";
 
     await carregarContexto();
 
@@ -278,27 +303,14 @@ async function confirmarAlteracao() {
 
 async function gravarEstado(novoEstado, comentario) {
   await Excel.run(async (context) => {
-    const sheets = context.workbook.worksheets;
-    sheets.load("items/name");
-    await context.sync();
-
-    let folha = sheets.items.find(s => s.name === NOME_FOLHA_ESTADO);
-    if (!folha) {
-      folha = sheets.add(NOME_FOLHA_ESTADO);
-      folha.visibility = Excel.SheetVisibility.veryHidden;
-      folha.getRange("A1:F1").values = [["Timestamp", "Utilizador", "EstadoAnterior", "EstadoNovo", "Iteracao", "Comentario"]];
-      await context.sync();
-    }
-
-    const usedRange = folha.getUsedRange();
-    usedRange.load("rowCount, values");
-    await context.sync();
+    const folha = await garantirEstrutura(context);
+    const linhasExistentes = await lerTabela(context, folha);
 
     let estadoAnterior = "";
     let iteracao = 1;
 
-    if (usedRange.rowCount > 1) {
-      const ultima = usedRange.values[usedRange.rowCount - 1];
+    if (linhasExistentes.length > 0) {
+      const ultima = linhasExistentes[linhasExistentes.length - 1];
       estadoAnterior = ultima[3] || "";
       const iterAnt = parseInt(ultima[4]) || 1;
       // Modelo B: incrementam só Devolvido→Em Curso (F7) e Revisto→Em Curso (F8)
@@ -315,8 +327,9 @@ async function gravarEstado(novoEstado, comentario) {
       hour: "2-digit", minute: "2-digit"
     });
 
-    const novaLinha = folha.getRange(`A${usedRange.rowCount + 1}:F${usedRange.rowCount + 1}`);
-    novaLinha.values = [[timestamp, utilizadorNome, estadoAnterior, novoEstado, iteracao, comentario]];
+    // Inserir nova linha na tabela
+    const tabela = folha.tables.getItem(NOME_TABELA_ESTADO);
+    tabela.rows.add(null, [[timestamp, utilizadorNome, estadoAnterior, novoEstado, iteracao, comentario]]);
 
     await context.sync();
   });
