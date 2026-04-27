@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>Painel RPA</title>
+  <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1.1/hosted/office.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: 'Aptos', 'Segoe UI', sans-serif;
+      font-size: 13px;
+      color: #000;
+      background: #ffffff;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .logo {
+      width: 28px;
+      height: 28px;
+      background: #005AAA;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .field {
+      margin-bottom: 12px;
+    }
+    .field-label {
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    .field-value {
+      font-size: 13px;
+      word-break: break-word;
+    }
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .estado-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .estado-emcurso { background: #FAEEDA; color: #633806; }
+    .estado-pendente { background: #FCEBEB; color: #791F1F; }
+    .estado-concluido { background: #E6F1FB; color: #0C447C; }
+    .estado-revisto { background: #E1F5EE; color: #085041; }
+    .estado-devolvido { background: #FBEAF0; color: #72243E; }
+    .estado-vazio { background: #F1EFE8; color: #444441; }
+    .divider {
+      border-top: 1px solid #e0e0e0;
+      margin: 14px 0;
+    }
+    select, button, textarea {
+      font-family: inherit;
+      font-size: 13px;
+    }
+    select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: white;
+    }
+    .btn-primary {
+      background: #005AAA;
+      color: white;
+      border: none;
+      padding: 9px 14px;
+      border-radius: 4px;
+      font-weight: 500;
+      cursor: pointer;
+      width: 100%;
+    }
+    .btn-primary:hover { background: #004080; }
+    .btn-primary:disabled { background: #959897; cursor: not-allowed; }
+    .btn-secondary {
+      background: white;
+      color: #555;
+      border: 1px solid #ccc;
+      padding: 7px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .btn-secondary:hover { background: #f5f5f5; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: white;
+      border-radius: 8px;
+      padding: 18px 20px;
+      width: 100%;
+      max-width: 320px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    }
+    .modal-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    .modal-subtitle { font-size: 12px; color: #666; margin-bottom: 14px; }
+    .modal label { display: block; font-size: 12px; color: #666; margin-bottom: 6px; }
+    .modal textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      min-height: 80px;
+      resize: vertical;
+      margin-bottom: 12px;
+    }
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .obrigatorio { color: #C13838; font-size: 11px; }
+    .opcional { color: #959897; font-size: 11px; }
+
+    .feedback {
+      display: none;
+      padding: 10px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+    .feedback.success { display: block; background: #E1F5EE; color: #085041; }
+    .feedback.error { display: block; background: #FCEBEB; color: #791F1F; }
+
+    .historico {
+      font-size: 11px;
+      color: #666;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="logo">RPA</div>
+    <div class="title">Painel RPA</div>
+  </div>
+
+  <div id="feedback" class="feedback"></div>
+
+  <div class="field">
+    <div class="field-label">Cliente</div>
+    <div class="field-value" id="cliente">A carregar...</div>
+  </div>
+
+  <div class="field">
+    <div class="field-label">Papel de trabalho</div>
+    <div class="field-value" id="ficheiro">A carregar...</div>
+  </div>
+
+  <div class="field-row">
+    <div class="field">
+      <div class="field-label">Utilizador</div>
+      <div class="field-value" id="utilizador">—</div>
+    </div>
+    <div class="field">
+      <div class="field-label">Iteração</div>
+      <div class="field-value" id="iteracao">—</div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="field">
+    <div class="field-label">Estado atual</div>
+    <div id="estado-atual"><span class="estado-badge estado-vazio">A carregar...</span></div>
+  </div>
+
+  <div class="field">
+    <div class="field-label">Alterar para</div>
+    <select id="novo-estado">
+      <option value="">— selecionar estado —</option>
+      <option value="Em Curso">Em Curso</option>
+      <option value="Pendente">Pendente</option>
+      <option value="Concluído">Concluído</option>
+      <option value="Devolvido">Devolvido</option>
+      <option value="Revisto">Revisto</option>
+    </select>
+  </div>
+
+  <button class="btn-primary" id="btn-submeter" disabled>Submeter alteração</button>
+
+  <div class="divider"></div>
+
+  <div class="field">
+    <div class="field-label">Histórico recente</div>
+    <div class="historico" id="historico">Sem alterações nesta sessão.</div>
+  </div>
+
+  <!-- Modal de comentário -->
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <div class="modal-title" id="modal-title">Confirmar alteração</div>
+      <div class="modal-subtitle" id="modal-subtitle">Estado vai mudar.</div>
+
+      <label id="modal-label">
+        Comentário <span class="obrigatorio">(obrigatório)</span>
+      </label>
+      <textarea id="modal-comentario" placeholder=""></textarea>
+
+      <div class="modal-actions">
+        <button class="btn-secondary" id="btn-cancelar">Cancelar</button>
+        <button class="btn-primary" id="btn-confirmar" style="width: auto;">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="taskpane.js"></script>
+</body>
+</html>
