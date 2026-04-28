@@ -1,12 +1,10 @@
 /* ============================================================
-   Painel RPA - Task pane logic (PoC v0.3.1)
-   Mudanças vs v0.3:
-   - Tabela RPA_Estado_Tbl ganha 7ª coluna: Notificado
-   - Add-in deixa Notificado vazio ao criar linha
-   - F3v2 marca Notificado="S" depois de enviar email
-   - Migração automática: se tabela existir só com 6 colunas, recria com 7
+   Painel RPA - Task pane logic (PoC v0.3.2)
+   - Tabela RPA_Estado_Tbl com 6 colunas (sem Notificado — anti-dup faz-se no flow via Audit Log)
+   - Migração robusta: se folha existe sem tabela ou com estrutura errada, recria limpa
+   - Trata corretamente o caso veryHidden + delete em Excel Online
    ============================================================ */
- 
+
 const ESTADO_CONFIG = {
   "Em Curso":   { comentario: "opcional",    modalTitle: "Marcar Em Curso",        modalSub: "PT volta a ser editável." },
   "Pendente":   { comentario: "obrigatorio", modalTitle: "Marcar como Pendente",   modalSub: "PT fica pausado a aguardar resposta do cliente." },
@@ -14,7 +12,7 @@ const ESTADO_CONFIG = {
   "Devolvido":  { comentario: "obrigatorio", modalTitle: "Devolver ao Auditor",    modalSub: "PT volta para correção. Notas obrigatórias." },
   "Revisto":    { comentario: "obrigatorio", modalTitle: "Aprovar como Revisto",   modalSub: "PT fica bloqueado para edição." }
 };
- 
+
 const ESTADO_CSS_CLASS = {
   "Em Curso": "emcurso",
   "Pendente": "pendente",
@@ -22,128 +20,173 @@ const ESTADO_CSS_CLASS = {
   "Revisto": "revisto",
   "Devolvido": "devolvido"
 };
- 
+
 const NOME_FOLHA_ESTADO = "_RPA_Estado";
 const NOME_TABELA_ESTADO = "RPA_Estado_Tbl";
-const COLUNAS_TABELA = ["Timestamp", "Utilizador", "EstadoAnterior", "EstadoNovo", "Iteracao", "Comentario", "Notificado"];
- 
+const COLUNAS_TABELA = ["Timestamp", "Utilizador", "EstadoAnterior", "EstadoNovo", "Iteracao", "Comentario"];
+const NUM_COLUNAS = COLUNAS_TABELA.length;
+
 let utilizadorEmail = "";
 let utilizadorNome = "";
 let estadoAtualLido = "";
 let timestampUltimoEstado = "";
- 
+
 Office.onReady(async (info) => {
   if (info.host !== Office.HostType.Excel) {
     mostrarErro("Este Add-in foi desenhado para Excel.");
     return;
   }
- 
+
   try {
     if (Office.context && Office.context.mailbox && Office.context.mailbox.userProfile) {
       utilizadorEmail = Office.context.mailbox.userProfile.emailAddress || "";
       utilizadorNome  = Office.context.mailbox.userProfile.displayName || utilizadorEmail;
     }
   } catch (e) { /* silencioso */ }
- 
+
   if (!utilizadorEmail) {
     utilizadorNome = "(identificado pelo flow no save)";
   }
- 
+
   document.getElementById("utilizador").textContent = utilizadorNome;
- 
+
   document.querySelectorAll(".tab").forEach(tab => {
     tab.addEventListener("click", () => switchTab(tab.dataset.tab));
   });
- 
+
   document.getElementById("novo-estado").addEventListener("change", onEstadoChange);
   document.getElementById("btn-submeter").addEventListener("click", abrirModal);
   document.getElementById("btn-cancelar").addEventListener("click", fecharModal);
   document.getElementById("btn-confirmar").addEventListener("click", confirmarAlteracao);
- 
+
   await carregarContexto();
 });
- 
+
 function switchTab(tabName) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tabName));
   document.querySelectorAll(".tab-content").forEach(c => c.classList.toggle("active", c.id === `tab-${tabName}`));
 }
- 
+
 /**
- * Garante que existe a folha _RPA_Estado com a tabela RPA_Estado_Tbl com 7 colunas.
- * Se folha existir com estrutura antiga (6 colunas), recria.
+ * Garante que existe a folha _RPA_Estado com tabela RPA_Estado_Tbl com NUM_COLUNAS colunas.
+ * Migração robusta: tenta primeiro adaptar, se falhar apaga e recria.
  */
 async function garantirEstrutura(context) {
   const sheets = context.workbook.worksheets;
   sheets.load("items/name");
   await context.sync();
- 
+
   let folha = sheets.items.find(s => s.name === NOME_FOLHA_ESTADO);
- 
+
   if (folha) {
+    // Verificar tabela
     const tables = folha.tables;
     tables.load("items/name");
     await context.sync();
- 
-    const tabelaExiste = tables.items.some(t => t.name === NOME_TABELA_ESTADO);
- 
-    if (tabelaExiste) {
-      // Verificar se tem 7 colunas (incluindo Notificado)
+
+    let tabelaOK = false;
+
+    if (tables.items.length > 0) {
       const tabela = folha.tables.getItem(NOME_TABELA_ESTADO);
-      const cols = tabela.columns;
-      cols.load("items/name");
-      await context.sync();
- 
-      const temNotificado = cols.items.some(c => c.name === "Notificado");
- 
-      if (!temNotificado) {
-        // Estrutura v0.3 sem Notificado: apagar folha e recriar
+      try {
+        const cols = tabela.columns;
+        cols.load("items/name");
+        await context.sync();
+
+        // Verificar se as 6 colunas standard estão lá (ignorar colunas extra)
+        const nomesCol = cols.items.map(c => c.name);
+        const todasPresentes = COLUNAS_TABELA.every(nome => nomesCol.includes(nome));
+
+        if (todasPresentes && nomesCol.length === NUM_COLUNAS) {
+          tabelaOK = true;
+        }
+      } catch (e) {
+        // Tabela com nome errado ou outro problema
+        tabelaOK = false;
+      }
+    }
+
+    if (!tabelaOK) {
+      // Forçar mostrar a folha primeiro (delete pode falhar em veryHidden em algumas versões)
+      try {
+        folha.visibility = Excel.SheetVisibility.visible;
+        await context.sync();
+      } catch (e) { /* silencioso */ }
+
+      // Apagar folha
+      try {
         folha.delete();
         await context.sync();
         folha = null;
+      } catch (e) {
+        // Se delete falhar, tentar limpar conteúdo e recriar tabela
+        console.error("Delete folha falhou, a tentar limpar:", e.message);
+        try {
+          folha.getUsedRange().clear();
+          // Apagar todas as tabelas existentes na folha
+          const tabs = folha.tables;
+          tabs.load("items/name");
+          await context.sync();
+          for (const t of tabs.items) {
+            try { t.delete(); } catch (_) {}
+          }
+          await context.sync();
+        } catch (e2) {
+          mostrarErro("Não foi possível limpar a estrutura. Apague manualmente a folha _RPA_Estado.");
+          throw e2;
+        }
       }
-    } else {
-      // Folha existe mas sem tabela
-      folha.delete();
-      await context.sync();
-      folha = null;
     }
   }
- 
+
+  // Criar folha + tabela se necessário
   if (!folha) {
     folha = sheets.add(NOME_FOLHA_ESTADO);
-    folha.visibility = Excel.SheetVisibility.veryHidden;
- 
-    const range = folha.getRange("A1:G1");
+  }
+
+  // Verificar se já tem cabeçalho
+  const usedRange = folha.getUsedRangeOrNullObject();
+  usedRange.load("rowCount, columnCount");
+  await context.sync();
+
+  if (usedRange.isNullObject || usedRange.rowCount === 0) {
+    // Criar cabeçalho + tabela
+    const colLetterEnd = String.fromCharCode(65 + NUM_COLUNAS - 1); // F para 6 colunas
+    const range = folha.getRange(`A1:${colLetterEnd}1`);
     range.values = [COLUNAS_TABELA];
- 
-    const tabela = folha.tables.add("A1:G1", true);
+
+    const tabela = folha.tables.add(`A1:${colLetterEnd}1`, true);
     tabela.name = NOME_TABELA_ESTADO;
- 
+
     await context.sync();
   }
- 
+
+  // Voltar a esconder
+  folha.visibility = Excel.SheetVisibility.veryHidden;
+  await context.sync();
+
   return folha;
 }
- 
+
 async function lerTabela(context, folha) {
-  const tabela = folha.tables.getItem(NOME_TABELA_ESTADO);
-  const dataRange = tabela.getDataBodyRange();
-  dataRange.load("values, rowCount");
   try {
+    const tabela = folha.tables.getItem(NOME_TABELA_ESTADO);
+    const dataRange = tabela.getDataBodyRange();
+    dataRange.load("values, rowCount");
     await context.sync();
     return dataRange.values || [];
   } catch (e) {
     return [];
   }
 }
- 
+
 async function carregarContexto() {
   try {
     const url = Office.context.document.url || "";
     const partes = url.split("/");
     const nomeFicheiro = decodeURIComponent(partes[partes.length - 1] || "(desconhecido)");
     document.getElementById("ficheiro").textContent = nomeFicheiro;
- 
+
     const matchSite = url.match(/\/sites\/([^/]+)\//);
     if (matchSite && matchSite[1]) {
       const siteName = decodeURIComponent(matchSite[1]);
@@ -151,11 +194,11 @@ async function carregarContexto() {
     } else {
       document.getElementById("cliente").textContent = "(local — sem SharePoint)";
     }
- 
+
     await Excel.run(async (context) => {
       const folha = await garantirEstrutura(context);
       const linhas = await lerTabela(context, folha);
- 
+
       if (linhas.length === 0) {
         estadoAtualLido = "";
         timestampUltimoEstado = "";
@@ -167,7 +210,7 @@ async function carregarContexto() {
         const iteracao = ultima[4] || "1";
         document.getElementById("iteracao").textContent = iteracao;
       }
- 
+
       atualizarBadgeEstado(estadoAtualLido, timestampUltimoEstado);
       renderHistorico(linhas);
     });
@@ -175,7 +218,7 @@ async function carregarContexto() {
     mostrarErro("Erro ao carregar contexto: " + err.message);
   }
 }
- 
+
 function parseClienteFromSite(siteName) {
   const matchRPA = siteName.match(/^(.+?)(RPA\d+)$/);
   if (matchRPA) {
@@ -186,25 +229,25 @@ function parseClienteFromSite(siteName) {
   }
   return siteName;
 }
- 
+
 function renderHistorico(linhas) {
   const lista = document.getElementById("historico-lista");
- 
+
   if (!linhas || linhas.length === 0) {
     lista.innerHTML = '<div class="historico-empty">Sem alterações registadas.</div>';
     return;
   }
- 
+
   const linhasInvertidas = [...linhas].reverse();
- 
+
   const html = linhasInvertidas.map(l => {
-    const [timestamp, utilizador, estadoAnt, estadoNovo, iteracao, comentario, notificado] = l;
+    const [timestamp, utilizador, estadoAnt, estadoNovo, iteracao, comentario] = l;
     const estadoClass = ESTADO_CSS_CLASS[estadoNovo] || "vazio";
     const tempo = formatarTempo(timestamp);
     const comentarioHtml = comentario && String(comentario).trim()
       ? `<div class="historico-comentario">"${escapeHtml(String(comentario))}"</div>`
       : `<div class="historico-comentario empty">(sem comentário)</div>`;
- 
+
     return `
       <div class="historico-item bg-${estadoClass}">
         <div class="historico-header">
@@ -216,10 +259,10 @@ function renderHistorico(linhas) {
       </div>
     `;
   }).join("");
- 
+
   lista.innerHTML = html;
 }
- 
+
 function formatarTempo(timestamp) {
   if (!timestamp) return "—";
   const s = String(timestamp);
@@ -231,13 +274,13 @@ function formatarTempo(timestamp) {
   }
   return s;
 }
- 
+
 function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = String(str);
   return div.innerHTML;
 }
- 
+
 function atualizarBadgeEstado(estado, timestamp) {
   const el = document.getElementById("estado-atual");
   const since = document.getElementById("estado-since");
@@ -246,42 +289,42 @@ function atualizarBadgeEstado(estado, timestamp) {
   el.innerHTML = `<span class="estado-badge ${cls}">${txt}</span>`;
   since.textContent = timestamp ? `desde ${formatarTempo(timestamp)}` : "";
 }
- 
+
 function onEstadoChange() {
   const valor = document.getElementById("novo-estado").value;
   document.getElementById("btn-submeter").disabled = !valor;
 }
- 
+
 function abrirModal() {
   const novoEstado = document.getElementById("novo-estado").value;
   if (!novoEstado) return;
- 
+
   const cfg = ESTADO_CONFIG[novoEstado];
   document.getElementById("modal-title").textContent = cfg.modalTitle;
   document.getElementById("modal-subtitle").textContent = cfg.modalSub;
- 
+
   const labelEl = document.getElementById("modal-label");
   if (cfg.comentario === "obrigatorio") {
     labelEl.innerHTML = 'Comentário <span class="obrigatorio">(obrigatório)</span>';
   } else {
     labelEl.innerHTML = 'Comentário <span class="opcional">(opcional)</span>';
   }
- 
+
   document.getElementById("modal-comentario").value = "";
   document.getElementById("modal-comentario").style.border = "1px solid #ccc";
   document.getElementById("modal").classList.add("active");
   setTimeout(() => document.getElementById("modal-comentario").focus(), 50);
 }
- 
+
 function fecharModal() {
   document.getElementById("modal").classList.remove("active");
 }
- 
+
 async function confirmarAlteracao() {
   const novoEstado = document.getElementById("novo-estado").value;
   const comentario = document.getElementById("modal-comentario").value.trim();
   const cfg = ESTADO_CONFIG[novoEstado];
- 
+
   if (cfg.comentario === "obrigatorio" && !comentario) {
     const ta = document.getElementById("modal-comentario");
     ta.style.border = "1px solid #C13838";
@@ -289,34 +332,34 @@ async function confirmarAlteracao() {
     ta.focus();
     return;
   }
- 
+
   try {
     await gravarEstado(novoEstado, comentario);
     fecharModal();
     mostrarSucesso(`Estado alterado para "${novoEstado}".`);
- 
+
     document.getElementById("novo-estado").value = "";
     document.getElementById("btn-submeter").disabled = true;
- 
+
     await carregarContexto();
- 
+
     try {
       Office.context.document.settings.saveAsync();
     } catch (e) { /* silencioso */ }
- 
+
   } catch (err) {
     mostrarErro("Erro ao gravar: " + err.message);
   }
 }
- 
+
 async function gravarEstado(novoEstado, comentario) {
   await Excel.run(async (context) => {
     const folha = await garantirEstrutura(context);
     const linhasExistentes = await lerTabela(context, folha);
- 
+
     let estadoAnterior = "";
     let iteracao = 1;
- 
+
     if (linhasExistentes.length > 0) {
       const ultima = linhasExistentes[linhasExistentes.length - 1];
       estadoAnterior = ultima[3] || "";
@@ -328,27 +371,26 @@ async function gravarEstado(novoEstado, comentario) {
         iteracao = iterAnt;
       }
     }
- 
+
     const timestamp = new Date().toLocaleString("pt-PT", {
       day: "2-digit", month: "2-digit", year: "numeric",
       hour: "2-digit", minute: "2-digit"
     });
- 
-    // Notificado vazio inicialmente — flow vai marcar "S" depois de notificar
+
     const tabela = folha.tables.getItem(NOME_TABELA_ESTADO);
-    tabela.rows.add(null, [[timestamp, utilizadorNome, estadoAnterior, novoEstado, iteracao, comentario, ""]]);
- 
+    tabela.rows.add(null, [[timestamp, utilizadorNome, estadoAnterior, novoEstado, iteracao, comentario]]);
+
     await context.sync();
   });
 }
- 
+
 function mostrarSucesso(msg) {
   const el = document.getElementById("feedback");
   el.className = "feedback success";
   el.textContent = msg;
   setTimeout(() => { el.className = "feedback"; el.textContent = ""; }, 4000);
 }
- 
+
 function mostrarErro(msg) {
   const el = document.getElementById("feedback");
   el.className = "feedback error";
