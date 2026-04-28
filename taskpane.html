@@ -20,8 +20,8 @@
       background: #f8f9fa;
       border-bottom: 0.5px solid #d0d0d0;
       display: flex;
-    }
       align-items: center;
+    }
     .header img {
       height: 32px;
       width: auto;
@@ -148,6 +148,21 @@
     }
     .btn-secondary:hover { background: #f5f5f5; }
 
+    /* Botão sync mapa - discreto */
+    .btn-link {
+      width: 100%;
+      background: transparent;
+      color: #005AAA;
+      border: none;
+      padding: 8px 4px;
+      font-size: 11px;
+      cursor: pointer;
+      margin-top: 8px;
+      text-decoration: underline;
+    }
+    .btn-link:hover { color: #003d73; }
+    .btn-link:disabled { color: #999; cursor: not-allowed; text-decoration: none; }
+
     /* Tab Histórico */
     .historico-empty {
       text-align: center;
@@ -247,6 +262,7 @@
     }
     .feedback.success { display: block; background: #E1F5EE; color: #085041; }
     .feedback.error { display: block; background: #FCEBEB; color: #791F1F; }
+    .feedback.warning { display: block; background: #FAEEDA; color: #633806; }
   </style>
 </head>
 <body>
@@ -303,6 +319,7 @@
         <option value="Revisto">Revisto</option>
       </select>
       <button class="btn-primary" id="btn-submeter" disabled>Submeter alteração</button>
+      <button class="btn-link" id="btn-sync-mapa">Sincronizar mapa</button>
     </div>
   </div>
 
