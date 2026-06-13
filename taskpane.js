@@ -415,16 +415,20 @@ function mostrarErro(msg) {
 
 // ===== SMOKE TEST TEMPORÁRIO (SSO) — remover após validação =====
 async function smokeTestSSO() {
+  const el = document.getElementById("feedback");
   try {
     const token = await Office.auth.getAccessToken({ allowSignInPrompt: true, allowConsentPrompt: true });
     const payload = JSON.parse(
       decodeURIComponent(escape(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))))
     );
-    alert("SSO OK\nNome: " + (payload.name || "(sem name)") +
-          "\nEmail: " + (payload.preferred_username || payload.upn || "(sem email)"));
+    const nome = payload.name || "(sem name)";
+    const mail = payload.preferred_username || payload.upn || "(sem email)";
+    el.className = "feedback success";
+    el.textContent = "SSO OK \u2014 " + nome + " \u00b7 " + mail;
     console.log("SSO payload:", payload);
   } catch (e) {
-    alert("SSO FALHOU — code " + (e.code || "?") + "\n" + e.message);
+    el.className = "feedback error";
+    el.textContent = "SSO FALHOU \u2014 code " + (e.code || "?") + " \u00b7 " + e.message;
     console.error("getAccessToken error", e);
   }
 }
