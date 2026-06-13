@@ -84,5 +84,14 @@
         <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Abrir o painel de workflow RPA"/>
       </bt:LongStrings>
     </Resources>
+      <WebApplicationInfo>
+      <Id>49f6c839-e98a-46c7-8357-49574b3a8c9c</Id>
+      <Resource>api://audit343.github.io/49f6c839-e98a-46c7-8357-49574b3a8c9c</Resource>
+      <Scopes>
+        <Scope>openid</Scope>
+        <Scope>profile</Scope>
+        <Scope>email</Scope>
+      </Scopes>
+    </WebApplicationInfo>
   </VersionOverrides>
 </OfficeApp>
