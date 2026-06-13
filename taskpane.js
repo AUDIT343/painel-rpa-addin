@@ -38,6 +38,8 @@ Office.onReady(async (info) => {
     return;
   }
 
+  smokeTestSSO(); // SMOKE TEST TEMPORÁRIO — remover depois
+
   try {
     if (Office.context && Office.context.mailbox && Office.context.mailbox.userProfile) {
       utilizadorEmail = Office.context.mailbox.userProfile.emailAddress || "";
@@ -409,4 +411,20 @@ function mostrarErro(msg) {
   const el = document.getElementById("feedback");
   el.className = "feedback error";
   el.textContent = msg;
+}
+
+// ===== SMOKE TEST TEMPORÁRIO (SSO) — remover após validação =====
+async function smokeTestSSO() {
+  try {
+    const token = await Office.auth.getAccessToken({ allowSignInPrompt: true, allowConsentPrompt: true });
+    const payload = JSON.parse(
+      decodeURIComponent(escape(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))))
+    );
+    alert("SSO OK\nNome: " + (payload.name || "(sem name)") +
+          "\nEmail: " + (payload.preferred_username || payload.upn || "(sem email)"));
+    console.log("SSO payload:", payload);
+  } catch (e) {
+    alert("SSO FALHOU — code " + (e.code || "?") + "\n" + e.message);
+    console.error("getAccessToken error", e);
+  }
 }
