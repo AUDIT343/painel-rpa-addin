@@ -416,6 +416,10 @@ function mostrarErro(msg) {
 // ===== SMOKE TEST TEMPORÁRIO (SSO) — remover após validação =====
 async function smokeTestSSO() {
   const el = document.getElementById("feedback");
+  let plat = "?";
+  try { plat = (Office.context.diagnostics && Office.context.diagnostics.platform) || Office.context.platform || "?"; } catch (e) {}
+  let idApi = "?";
+  try { idApi = String(Office.context.requirements.isSetSupported("IdentityAPI", "1.3")); } catch (e) { idApi = "erro"; }
   try {
     const token = await Office.auth.getAccessToken({ allowSignInPrompt: true, allowConsentPrompt: true });
     const payload = JSON.parse(
@@ -424,11 +428,11 @@ async function smokeTestSSO() {
     const nome = payload.name || "(sem name)";
     const mail = payload.preferred_username || payload.upn || "(sem email)";
     el.className = "feedback success";
-    el.textContent = "SSO OK \u2014 " + nome + " \u00b7 " + mail;
+    el.textContent = "SSO OK \u2014 " + nome + " \u00b7 " + mail + "  [plat=" + plat + " idAPI1.3=" + idApi + "]";
     console.log("SSO payload:", payload);
   } catch (e) {
     el.className = "feedback error";
-    el.textContent = "SSO FALHOU \u2014 code " + (e.code || "?") + " \u00b7 " + e.message;
+    el.textContent = "SSO FALHOU code " + (e.code || "?") + "  [plat=" + plat + " idAPI1.3=" + idApi + "]  " + e.message;
     console.error("getAccessToken error", e);
   }
 }
