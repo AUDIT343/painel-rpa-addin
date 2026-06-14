@@ -4,6 +4,7 @@
    - Migração robusta: se folha existe sem tabela ou com estrutura errada, recria limpa
    - Trata corretamente o caso veryHidden + delete em Excel Online
    - v0.4.1: botão "Sincronizar mapa" força save do ficheiro (flow F-Sync2 trata do upsert)
+   - v0.5.0: identidade do utilizador via SSO (Office getAccessToken) gravada na coluna Utilizador (revoga limitação 5.5)
    ============================================================ */
 
 const ESTADO_CONFIG = {
@@ -38,20 +39,9 @@ Office.onReady(async (info) => {
     return;
   }
 
-  smokeTestSSO(); // SMOKE TEST TEMPORÁRIO — remover depois
+  await obterIdentidade();
 
-  try {
-    if (Office.context && Office.context.mailbox && Office.context.mailbox.userProfile) {
-      utilizadorEmail = Office.context.mailbox.userProfile.emailAddress || "";
-      utilizadorNome  = Office.context.mailbox.userProfile.displayName || utilizadorEmail;
-    }
-  } catch (e) { /* silencioso */ }
-
-  if (!utilizadorEmail) {
-    utilizadorNome = "(identificado pelo flow no save)";
-  }
-
-  document.getElementById("utilizador").textContent = utilizadorNome;
+  document.getElementById("utilizador").textContent = utilizadorEmail || "(identificado pelo flow no save)";
 
   document.querySelectorAll(".tab").forEach(tab => {
     tab.addEventListener("click", () => switchTab(tab.dataset.tab));
@@ -394,7 +384,8 @@ async function gravarEstado(novoEstado, comentario) {
     });
 
     const tabela = folha.tables.getItem(NOME_TABELA_ESTADO);
-    tabela.rows.add(null, [[timestamp, utilizadorNome, estadoAnterior, novoEstado, iteracao, comentario]]);
+    const utilizadorReg = utilizadorEmail || "(identificado pelo flow no save)";
+    tabela.rows.add(null, [[timestamp, utilizadorReg, estadoAnterior, novoEstado, iteracao, comentario]]);
 
     await context.sync();
   });
@@ -413,26 +404,19 @@ function mostrarErro(msg) {
   el.textContent = msg;
 }
 
-// ===== SMOKE TEST TEMPORÁRIO (SSO) — remover após validação =====
-async function smokeTestSSO() {
-  const el = document.getElementById("feedback");
-  let plat = "?";
-  try { plat = (Office.context.diagnostics && Office.context.diagnostics.platform) || Office.context.platform || "?"; } catch (e) {}
-  let idApi = "?";
-  try { idApi = String(Office.context.requirements.isSetSupported("IdentityAPI", "1.3")); } catch (e) { idApi = "erro"; }
+// ===== Identidade via SSO (Office getAccessToken) — decisao 5.x (revoga 5.5) =====
+async function obterIdentidade() {
+  utilizadorEmail = "";
+  utilizadorNome = "";
   try {
     const token = await Office.auth.getAccessToken({ allowSignInPrompt: true, allowConsentPrompt: true });
     const payload = JSON.parse(
       decodeURIComponent(escape(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))))
     );
-    const nome = payload.name || "(sem name)";
-    const mail = payload.preferred_username || payload.upn || "(sem email)";
-    el.className = "feedback success";
-    el.textContent = "SSO OK \u2014 " + nome + " \u00b7 " + mail + "  [plat=" + plat + " idAPI1.3=" + idApi + "]";
-    console.log("SSO payload:", payload);
+    utilizadorEmail = payload.preferred_username || payload.upn || "";
+    utilizadorNome = payload.name || "";
   } catch (e) {
-    el.className = "feedback error";
-    el.textContent = "SSO FALHOU code " + (e.code || "?") + "  [plat=" + plat + " idAPI1.3=" + idApi + "]  " + e.message;
-    console.error("getAccessToken error", e);
+    console.error("SSO getAccessToken falhou:", e);
+    // sem identidade -> grava placeholder; o fallback do Editor no save (flow) mantem-se
   }
 }
