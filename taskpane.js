@@ -5,6 +5,7 @@
    - Trata corretamente o caso veryHidden + delete em Excel Online
    - v0.4.1: botão "Sincronizar mapa" força save do ficheiro (flow F-Sync2 trata do upsert)
    - v0.5.0: identidade do utilizador via SSO (Office getAccessToken) gravada na coluna Utilizador (revoga limitação 5.5)
+   - v0.5.1: transições de revisor (Revisto / reabertura Revisto->Em Curso) restritas ao Sócio + Susana via SSO (decisão 5.x)
    ============================================================ */
 
 const ESTADO_CONFIG = {
@@ -28,6 +29,24 @@ const NOME_TABELA_ESTADO = "RPA_Estado_Tbl";
 const COLUNAS_TABELA = ["Timestamp", "Utilizador", "EstadoAnterior", "EstadoNovo", "Iteracao", "Comentario"];
 const NUM_COLUNAS = COLUNAS_TABELA.length;
 
+// Revisores autorizados (Sócio + Susana). Lista fixa — resolução por grupo via Graph é instável neste tenant.
+const REVISORES = ["ricardopereira@rpa-sroc.pt", "susanapereira@rpa-sroc.pt"];
+function ehRevisor() {
+  return REVISORES.includes((utilizadorEmail || "").trim().toLowerCase());
+}
+function transicaoSoRevisor(novoEstado) {
+  if (novoEstado === "Revisto") return true;                                  // aprovar como Revisto
+  if (estadoAtualLido === "Revisto" && novoEstado === "Em Curso") return true; // reabrir um PT já revisto (5.8)
+  return false;
+}
+function aplicarRestricoesRevisor() {
+  const opt = document.querySelector('#novo-estado option[value="Revisto"]');
+  if (!opt) return;
+  const rev = ehRevisor();
+  opt.disabled = !rev;
+  opt.textContent = rev ? "Revisto" : "Revisto (só revisor)";
+}
+
 let utilizadorEmail = "";
 let utilizadorNome = "";
 let estadoAtualLido = "";
@@ -42,6 +61,8 @@ Office.onReady(async (info) => {
   await obterIdentidade();
 
   document.getElementById("utilizador").textContent = utilizadorEmail || "(identificado pelo flow no save)";
+
+  aplicarRestricoesRevisor();
 
   document.querySelectorAll(".tab").forEach(tab => {
     tab.addEventListener("click", () => switchTab(tab.dataset.tab));
@@ -270,7 +291,16 @@ function atualizarBadgeEstado(estado, timestamp) {
 
 function onEstadoChange() {
   const valor = document.getElementById("novo-estado").value;
-  document.getElementById("btn-submeter").disabled = !valor;
+  const btn = document.getElementById("btn-submeter");
+  const fb = document.getElementById("feedback");
+  if (!valor) { btn.disabled = true; return; }
+  if (transicaoSoRevisor(valor) && !ehRevisor()) {
+    btn.disabled = true;
+    mostrarErro("Esta transição (revisão) está reservada ao Sócio ou à Susana.");
+    return;
+  }
+  if (fb.classList.contains("error")) { fb.className = "feedback"; fb.textContent = ""; }
+  btn.disabled = false;
 }
 
 function abrirModal() {
@@ -302,6 +332,12 @@ async function confirmarAlteracao() {
   const novoEstado = document.getElementById("novo-estado").value;
   const comentario = document.getElementById("modal-comentario").value.trim();
   const cfg = ESTADO_CONFIG[novoEstado];
+
+  if (transicaoSoRevisor(novoEstado) && !ehRevisor()) {
+    fecharModal();
+    mostrarErro("Transição reservada ao Sócio/Susana. Ação bloqueada.");
+    return;
+  }
 
   if (cfg.comentario === "obrigatorio" && !comentario) {
     const ta = document.getElementById("modal-comentario");
